@@ -8,6 +8,9 @@ import {
 } from './coords'
 import type { Wall, WallState } from './types'
 
+const BIN_DEG = 2
+const BINS = Math.round(360 / BIN_DEG)
+
 export function extractWallsFromDepth(
   depth: Float32Array,
   width: number,
@@ -15,51 +18,83 @@ export function extractWallsFromDepth(
   valid?: Uint8Array,
 ): { walls: Wall[]; scaleCorrection: number } {
   const stride = Math.max(1, Math.floor(width / 256))
-  const binDeg = 2
-  const bins = Math.round(360 / binDeg)
-  const perBin: number[][] = Array.from({ length: bins }, () => [])
-  let floorSum = 0
-  let floorN = 0
 
-  for (let v = Math.floor(height * 0.45); v < height; v += stride) {
+  // Pass 1 — floor estimate (TECHNICAL-DESIGN §4.2): sample solidly-below-
+  // horizon rows, where an indoor floor dominates the rays; the floor plane
+  // is y ≈ const, so the median y is a robust floor estimate (RANSAC-lite
+  // for the only case that matters: a floor perpendicular to gravity).
+  const floorYs: number[] = []
+  for (let v = Math.floor(height * 0.55); v < Math.floor(height * 0.95); v += stride) {
     for (let u = 0; u < width; u += stride) {
       const i = v * width + u
       if (valid && valid[i] === 0) continue
       const z = depth[i]
       if (!Number.isFinite(z) || z <= 0.2 || z > 30) continue
-      const [x, y, zz] = depthPixelToPoint(u + 0.5, v + 0.5, z, width, height)
-      if (y > -0.02 || y < -3.5) continue
-      floorSum += y
-      floorN++
-      const horiz = Math.hypot(x, zz)
+      const [, y] = depthPixelToPoint(u + 0.5, v + 0.5, z, width, height)
+      if (y >= -0.02 || y < -4) continue
+      floorYs.push(y)
+    }
+  }
+  if (floorYs.length <= 20) {
+    // no dominant floor (domed / open-air): flag everything, raw distances
+    return { walls: extractRuns(new Float64Array(BINS).fill(Number.NaN), 1, true, true), scaleCorrection: 1 }
+  }
+  floorYs.sort((a, b) => a - b)
+  let floorY = floorYs[Math.floor(floorYs.length / 2)]
+  let scaleCorrection = EYE_HEIGHT_M / Math.abs(floorY)
+  if (!Number.isFinite(scaleCorrection) || scaleCorrection <= 0) scaleCorrection = 1
+  // Floor-anchor sanity (§4.2): if "metric" depth disagrees with the fixed
+  // eye height by too much, correct anyway but mark the scene unreliable.
+  const scaleUnreliable = scaleCorrection < 0.6 || scaleCorrection > 1.6
+  if (scaleUnreliable) scaleCorrection = 1
+
+  // Pass 2 — wall-base band (§4.3): heights 5–60 cm ABOVE the floor, i.e.
+  // wall lower parts only, floor plane excluded. Bin horizontal distance by
+  // yaw; per-bin median = the wall distance profile d(θ).
+  const perBin: number[][] = Array.from({ length: BINS }, () => [])
+  for (let v = 0; v < height; v += stride) {
+    for (let u = 0; u < width; u += stride) {
+      const i = v * width + u
+      if (valid && valid[i] === 0) continue
+      const z = depth[i]
+      if (!Number.isFinite(z) || z <= 0.2 || z > 30) continue
+      const [x, yRaw, zz] = depthPixelToPoint(u + 0.5, v + 0.5, z, width, height)
+      const aboveFloor = (yRaw - floorY) * scaleCorrection
+      if (aboveFloor < 0.05 || aboveFloor > 0.6) continue
+      const horiz = Math.hypot(x, zz) * scaleCorrection
       if (horiz < 0.2 || horiz > 25) continue
       const yaw = dirToAim(x, 0, zz).yaw
-      const bin = ((Math.floor(((yaw + 180) / 360) * bins) % bins) + bins) % bins
+      const bin = ((Math.floor(((yaw + 180) / 360) * BINS) % BINS) + BINS) % BINS
       perBin[bin].push(horiz)
     }
   }
 
-  let scaleCorrection = EYE_HEIGHT_M / Math.abs(floorN > 20 ? floorSum / floorN : EYE_HEIGHT_M)
-  if (!Number.isFinite(scaleCorrection) || scaleCorrection <= 0) scaleCorrection = 1
-  // Floor-anchor sanity: if metric depth is wrong, keep 1 and flag.
-  if (scaleCorrection < 0.6 || scaleCorrection > 1.6) scaleCorrection = 1
-  const scaleGate = scaleCorrection === 1 && floorN <= 20
-
-  const profile = new Float64Array(bins)
-  for (let b = 0; b < bins; b++) {
+  const profile = new Float64Array(BINS)
+  for (let b = 0; b < BINS; b++) {
     const arr = perBin[b]
     if (arr.length < 1) {
       profile[b] = Number.NaN
       continue
     }
     arr.sort((a, c) => a - c)
-    profile[b] = arr[Math.floor(arr.length / 2)] * scaleCorrection
+    profile[b] = arr[Math.floor(arr.length / 2)]
   }
 
-  type Run = { start: number; end: number; dist: number; mad: number; glass: boolean }
-  const runs: Run[] = []
+  const walls = extractRuns(profile, scaleCorrection, false, scaleUnreliable)
+  return { walls, scaleCorrection: round2(scaleCorrection) }
+}
+
+function extractRuns(
+  profile: Float64Array,
+  scaleCorrection: number,
+  noFloor: boolean,
+  scaleUnreliable: boolean,
+): Wall[] {
+  const runs: { start: number; end: number; dist: number; mad: number; glass: boolean }[] = []
   let i = 0
   const madTol = 0.35
+  const bins = BINS
+  const binDeg = BIN_DEG
   while (i < bins) {
     while (i < bins && !Number.isFinite(profile[i])) i++
     if (i >= bins) break
@@ -81,14 +116,15 @@ export function extractWallsFromDepth(
     }
   }
 
-  const walls: Wall[] = runs.map((run, idx) => {
+  return runs.map((run, idx) => {
     const yaw0 = wrapYaw(-180 + run.start * binDeg + binDeg / 2)
     const yaw1 = wrapYaw(-180 + run.end * binDeg + binDeg / 2)
     const pitch = (Math.atan2(-EYE_HEIGHT_M, run.dist) * 180) / Math.PI
     const arc = (run.end - run.start + 1) * binDeg
     const widthM = 2 * run.dist * Math.tan(((arc / 2) * Math.PI) / 180)
     let confidence = (1 - Math.min(1, run.mad / 0.5)) * Math.min(1, arc / 25)
-    if (scaleGate) confidence *= 0.7
+    if (noFloor) confidence = Math.min(confidence, 0.3)
+    if (scaleUnreliable) confidence *= 0.7
     if (run.glass) confidence *= 0.4
     let state: WallState
     if (run.glass || confidence < 0.4) state = 'rejected'
@@ -104,13 +140,17 @@ export function extractWallsFromDepth(
       state,
       confidence: round2(confidence),
       source: 'depth',
-      notes: run.glass ? 'glass-suspect' : scaleGate ? 'scale-unreliable' : '',
+      notes: run.glass
+        ? 'glass-suspect'
+        : noFloor
+          ? 'no-floor-plane'
+          : scaleUnreliable
+            ? 'scale-unreliable'
+            : '',
       widthM: round2(widthM),
       distanceM: round2(run.dist),
     }
   })
-
-  return { walls, scaleCorrection: round2(scaleCorrection) }
 }
 
 function median(arr: number[]): number {

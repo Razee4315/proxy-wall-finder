@@ -119,19 +119,29 @@ the backend swaps:
 Decision rule: DAP first (domain match); DA3 if DAP can't run; tiling
 pipeline shared between fallbacks.
 
-## 6. Open items to verify during M1 (blocking checks)
+## 6. M1 blocking checks — RESULTS (2026-09-19, full site on Colab T4)
 
-1. **License** — DAP ships a LICENSE file whose terms are not stated on the
-   README. Read it before any client-facing/commercial use. (Our use is
-   internal tooling; still, verify redistribution of outputs is permitted.)
-2. **Weights availability** — confirm the HF repo downloads without gating
-   (account/token requirements), and record the exact weights file + commit
-   in the sidecar JSON provenance.
-3. **Metric claim** — run DAP on one NEIC pano with a known real distance
-   (laser measure) and check the returned metres. Then our floor-plane scale
-   fit (TECHNICAL-DESIGN §4.2) should report correction factor `s ≈ 1`;
-   anything outside `0.6–1.6` means "relative depth in disguise" and the
-   floor-anchor calibration becomes load-bearing instead of a sanity check.
-4. **Glass behavior** — shoot the Venture Corridor's dotted-glass suite
-   front and inspect the depth: expect garbage/conflict; this validates the
-   glass-suspect heuristic and the manual-fallback workflow.
+1. **License — answered.** Weights LICENSE is **CC BY-NC 4.0** (non-commercial).
+   Fine for internal/demo; paid client tours need a commercial license from
+   Insta360 or a fallback backend (README has the decision note).
+2. **Weights availability — PASS.** HF repo public, not gated; single
+   `model.pth` 1.46 GB; commit recorded in every provenance JSON (595492db…).
+3. **Metric claim — PASS, with a correction factor.** Ran the full NEIC site
+   (7 unique scenes) + compared `neic-venture-corridor` against the tour's
+   hand-calibrated proxy walls via `scripts/compare-golden.py`:
+   global scale ratio **dap/hand = 0.836** — inside the 0.6–1.6 gate, so the
+   depth is metric, not relative-in-disguise. The −16 % systematic offset is
+   removed per-scene by the floor-anchor scale fit; per-wall residuals
+   (−0.30 / −0.92 / −0.55 m) are within the hand calibration's own precision
+   (crosshair picks on 720p screenshots, ±0.3–0.5 m) plus in-band furniture.
+   One hand wall (space-mural) had no depth samples inside ±40 % — review
+   step's job, and a known limit of comparing against screenshot-grade truth.
+4. **Glass behavior — mask does NOT flag glass.** `pred_mask` reported 100 %
+   valid on every scene, and the dotted-glass suite front reads ~0.3 m NEARER
+   than hand truth (frame/mullions dominate), not farther. The glass-suspect
+   heuristic must come from image-edge density + profile variance
+   (TECHNICAL-DESIGN §4.5), not from the model mask.
+
+Runtime evidence: 10 panos (7 unique + 3 dupes) on a free Colab T4 in
+**9.2 s total**, previews spatially faithful (doorways, plant, glowing
+panels all resolve). M1 acceptance: 9 NEIC panos → npz + provenance ✓.

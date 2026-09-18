@@ -28,7 +28,8 @@ export function depthPixelToPoint(
   height: number,
 ): [number, number, number] {
   const lon = (u / width) * 2 * Math.PI - Math.PI
-  const lat = (v / height) * Math.PI - Math.PI / 2
+  // Equirect row 0 is the zenith: lat +π/2 at the top, −π/2 at the bottom.
+  const lat = Math.PI / 2 - (v / height) * Math.PI
   return [
     Math.cos(lat) * Math.sin(lon) * z,
     Math.sin(lat) * z,

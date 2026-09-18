@@ -90,7 +90,7 @@ For depth pixel `(u, v)` with depth `z` (metres), equirect size `W×H`:
 
 ```
 lon = (u / W) * 2π - π          // -π..π, u=0 → -π
-lat = (v / H) * π - π/2         //  π/2..-π/2, v=0 → top
+lat = π/2 - (v / H) * π         // +π/2 at row 0 (zenith), -π/2 at row H (nadir)
 dir = ( cos(lat)·sin(lon), sin(lat), -cos(lat)·cos(lon) )   // metres
 p   = dir · z
 ```

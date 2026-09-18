@@ -320,13 +320,14 @@ def main() -> int:
             "direction_convention": {
                 "code": "pwp-v1",
                 "formula": (
-                    "lon=(u/W)*2*pi - pi; lat=(v/H)*pi - pi/2; "
+                    "lon=(u/W)*2*pi - pi; lat=pi/2 - (v/H)*pi; "
                     "dir=(cos(lat)*sin(lon), sin(lat), -cos(lat)*cos(lon))"
                 ),
                 "note": (
                     "pixel-exact equivalent of DAP depth2point.py "
                     "(z-up, theta=(1-u)*2*pi, phi=v*pi) re-expressed in tour "
-                    "coordinates (Y-up, yaw 0 = -Z); see docs/TECHNICAL-DESIGN.md 4.1"
+                    "coordinates (Y-up, yaw 0 = -Z); row 0 = zenith. "
+                    "See docs/TECHNICAL-DESIGN.md 4.1"
                 ),
             },
         }

@@ -38,12 +38,14 @@ def main() -> int:
     args = ap.parse_args()
 
     npz = np.load(args.npz)
-    depth, valid = npz["depth"].astype(np.float32), npz["valid"]
-    h, w = depth.shape
+    depth = npz["depth"].astype(np.float32).reshape(-1)
+    valid = npz["valid"].reshape(-1) if "valid" in npz else None
+    h, w = npz["depth"].shape
 
-    # near-floor rows: pitch in [-50°, -15°] → v = (lat + 90°)/180 * H
-    v_lo = int((90 - 50) / 180 * h)
-    v_hi = int((90 - 15) / 180 * h)
+    # near-floor rows: pitch in [-50°, -15°]; v = (0.5 - pitch/180) * H
+    # (pitch -15° is higher in the image → smaller row; -50° → larger row)
+    v_lo = int((0.5 - (-15) / 180) * h)
+    v_hi = int((0.5 - (-50) / 180) * h)
 
     print(f"depth: {w}x{h}, rows {v_lo}..{v_hi} (near-floor band)\n")
     print(f"{'wall':<24} {'hand d':>7} {'dap d':>7} {'diff':>7}  verdict (±20 cm)")
