@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { EYE_HEIGHT_M, GROUND_Y, UNITS_PER_METER, aimToDir, dirToAim } from '../lib/coords'
+import { GROUND_Y, UNITS_PER_METER, aimToDir, dirToAim } from '../lib/coords'
 import type { Wall } from '../lib/types'
 import { useStore } from '../store'
-
-type DragKind = 'corner0' | 'corner1' | 'height' | 'move'
 
 export function wallCorners(wall: Wall) {
   const [a, b] = wall.seam
@@ -18,15 +16,15 @@ export function wallCorners(wall: Wall) {
 }
 
 /**
- * Direct manipulation for the selected wall — all pointer handling runs in
- * window listeners with our own ray-sphere hit tests (r3f event delivery is
- * bypassed on purpose: it depends on the render loop, which throttles when
- * the browser pane is occluded).
+ * Direct manipulation for the selected wall. All pointer handling runs in
+ * window listeners with our own math (r3f event delivery is bypassed on
+ * purpose — it depends on the render loop, which throttles when the browser
+ * pane is occluded).
  *
- *  - white dots on the floor seam: drag → the corner slides along the
- *    virtual floor with grab-offset semantics (1:1 follow, no teleport)
- *  - amber dots on the top edge: drag up/down → wall height
- *  - blue dot at the center: drag → the whole wall slides on the floor
+ * Interaction model (matches how walls work):
+ *  - white dots (floor corners): drag → the corner slides ALONG THE WALL'S
+ *    BASE LINE — stretch/shorten the wall. The other corner stays put.
+ *  - amber dots (top corners): drag up/down → wall height
  */
 export function WallEditHandles({
   wall,
@@ -39,157 +37,123 @@ export function WallEditHandles({
 }) {
   const { camera, gl } = useThree()
   const setSeamAim = useStore((s) => s.setSeamAim)
-  const setWallSeam = useStore((s) => s.setWallSeam)
   const setWallHeight = useStore((s) => s.setWallHeight)
-  const dragKind = useRef<DragKind | null>(null)
+  const dragKind = useRef<'corner0' | 'corner1' | 'height' | null>(null)
   const dragPointer = useRef<number | null>(null)
-  const grabOffset = useRef(new THREE.Vector3())
-  const moveGrab = useRef(new THREE.Vector3())
-  const moveStart = useRef({ b0: new THREE.Vector3(), b1: new THREE.Vector3() })
-  const dragBounds = useRef({ min: 0.5, max: 20 })
+  const lineOrigin = useRef(new THREE.Vector3())
+  const lineDir = useRef(new THREE.Vector3())
   const raycaster = useMemo(() => new THREE.Raycaster(), [])
-  const floorPlane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -GROUND_Y), [])
-  const hit = useMemo(() => new THREE.Vector3(), [])
-  const [hoverIdx, setHoverIdx] = useState(-1)
 
-  const { b0, b1, t0, t1, h } = useMemo(() => wallCorners(wall), [wall])
-  const center = useMemo(
-    () => b0.clone().add(b1).multiplyScalar(0.5).setY(GROUND_Y + h / 2),
-    [b0, b1, h],
-  )
-  const normal = useMemo(() => {
-    const right = b1.clone().sub(b0).normalize()
-    const n = new THREE.Vector3().crossVectors(right, new THREE.Vector3(0, 1, 0)).normalize()
-    return n.dot(center) > 0 ? n.negate() : n
-  }, [b0, b1, center])
+  const { b0, b1, t0, t1 } = useMemo(() => wallCorners(wall), [wall])
 
   const outline = useMemo(() => {
     const g = new THREE.BufferGeometry().setFromPoints([b0, b1, t1, t0])
     return g
   }, [b0, b1, t0, t1])
 
-  const handles = useMemo(
-    () => [
-      { kind: 'corner' as const, end: 0 as 0 | 1, pos: b0, color: '#ffffff' },
-      { kind: 'corner' as const, end: 1 as 0 | 1, pos: b1, color: '#ffffff' },
-      { kind: 'height' as const, pos: t0, color: '#ffd166' },
-      { kind: 'height' as const, pos: t1, color: '#ffd166' },
-      { kind: 'move' as const, pos: center.clone().addScaledVector(normal, 12), color: '#8fd0ff' },
-    ],
-    [b0, b1, t0, t1, center, normal],
-  )
+  /** screen-constant hit radius (world units) for a handle at position p */
+  const hitRadius = (p: THREE.Vector3) => Math.max(1.5, p.distanceTo(camera.position) * 0.032) * 2.2
 
-  /** screen-constant hit radius for a handle at world position p */
-  const hitRadius = (p: THREE.Vector3) => {
-    const d = p.distanceTo(camera.position)
-    return Math.max(1.5, d * 0.032) * 2.2
-  }
-
-  /** which handle is under the pointer ray? (-1 = none) */
+  /** pick the handle under the current ndc ray (-1 = none) */
   const pick = () => {
     camera.updateMatrixWorld()
     raycaster.setFromCamera(ndc.current, camera)
     let best = -1
     let bestT = Infinity
-    handles.forEach((hd, i) => {
-      const toC = hd.pos.clone().sub(raycaster.ray.origin)
+    const candidates = [
+      { i: 0, p: b0 },
+      { i: 1, p: b1 },
+      { i: 2, p: t0 },
+      { i: 3, p: t1 },
+    ]
+    for (const { i, p } of candidates) {
+      const toC = p.clone().sub(raycaster.ray.origin)
       const t = toC.dot(raycaster.ray.direction)
-      if (t <= 0) return
+      if (t <= 0) continue
       const closest = raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, t)
-      if (closest.distanceTo(hd.pos) <= hitRadius(hd.pos) && t < bestT) {
+      if (closest.distanceTo(p) <= hitRadius(p) && t < bestT) {
         bestT = t
         best = i
       }
-    })
+    }
     return best
   }
 
   useEffect(() => {
     const dom = gl.domElement
 
-    const onDown = (e: PointerEvent) => {
-      if (e.target !== dom) return
+    const setNdc = (e: PointerEvent) => {
       const r = dom.getBoundingClientRect()
       ndc.current.set(
         ((e.clientX - r.left) / r.width) * 2 - 1,
         -((e.clientY - r.top) / r.height) * 2 + 1,
       )
+    }
+
+    const onDown = (e: PointerEvent) => {
+      if (e.target !== dom) return
+      setNdc(e)
       const idx = pick()
       if (idx < 0) return
-      const hd = handles[idx]
-      if (hd.kind === 'corner') {
-        // grab offset: the corner stays glued to the mouse point
-        raycaster.setFromCamera(ndc.current, camera)
-        if (raycaster.ray.intersectPlane(floorPlane, hit)) {
-          grabOffset.current.copy(hd.pos).sub(hit)
-        } else {
-          grabOffset.current.set(0, 0, 0)
-        }
-        const seamAim = wall.seam[hd.end]
-        const dist = Math.abs(EYE_HEIGHT_M / Math.tan((Math.abs(seamAim.pitch) * Math.PI) / 180))
-        dragBounds.current = { min: Math.max(0.5, dist * 0.4), max: dist * 2.5 }
-      }
-      if (hd.kind === 'move') {
-        raycaster.setFromCamera(ndc.current, camera)
-        if (raycaster.ray.intersectPlane(floorPlane, hit)) {
-          moveGrab.current.copy(hit)
-          moveStart.current = { b0: b0.clone(), b1: b1.clone() }
-        }
-      }
-      dragKind.current =
-        hd.kind === 'corner' ? (hd.end === 0 ? 'corner0' : 'corner1') : hd.kind
+      if (idx === 0) dragKind.current = 'corner0'
+      else if (idx === 1) dragKind.current = 'corner1'
+      else dragKind.current = 'height'
       dragPointer.current = e.pointerId
+      if (idx <= 1) {
+        // freeze the wall's base line at grab: the dragged corner slides
+        // along this line, the other corner stays fixed
+        const self = idx === 0 ? b0 : b1
+        const other = idx === 0 ? b1 : b0
+        lineDir.current = other.clone().sub(self).setY(0).normalize()
+        lineOrigin.current = other.clone()
+      }
       setControls(false)
       e.preventDefault()
     }
 
     const onMove = (e: PointerEvent) => {
       if (!dragKind.current) {
-        // hover: pick + cursor feedback
-        const r = dom.getBoundingClientRect()
-        ndc.current.set(
-          ((e.clientX - r.left) / r.width) * 2 - 1,
-          -((e.clientY - r.top) / r.height) * 2 + 1,
-        )
+        setNdc(e)
         const idx = pick()
-        setHoverIdx(idx)
         const next = idx >= 0 ? 'grab' : ''
         if (document.body.style.cursor !== next) document.body.style.cursor = next
         return
       }
       if (e.pointerId !== dragPointer.current) return
-      const r = dom.getBoundingClientRect()
-      ndc.current.set(
-        ((e.clientX - r.left) / r.width) * 2 - 1,
-        -((e.clientY - r.top) / r.height) * 2 + 1,
-      )
+      setNdc(e)
+      camera.updateMatrixWorld()
       raycaster.setFromCamera(ndc.current, camera)
-      const ray = raycaster.ray
-      const kind = dragKind.current
-      if (kind === 'corner0' || kind === 'corner1') {
-        if (ray.intersectPlane(floorPlane, hit)) {
-          const target = hit.clone().add(grabOffset.current)
-          const horiz = Math.hypot(target.x, target.z)
-          const clamped = Math.min(dragBounds.current.max, Math.max(dragBounds.current.min, horiz))
-          const k = clamped / (horiz || 1)
-          setSeamAim(wall.id, kind === 'corner0' ? 0 : 1, dirToAim(target.x * k, GROUND_Y, target.z * k))
+
+      if (dragKind.current === 'corner0' || dragKind.current === 'corner1') {
+        // slide the dragged corner along the wall's base line: intersect the
+        // pointer ray with the wall's vertical plane, then project onto the
+        // base line (clamped 10 cm .. 20 m from the fixed corner)
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+          new THREE.Vector3(-lineDir.current.z, 0, lineDir.current.x).normalize(),
+          lineOrigin.current,
+        )
+        const hp = new THREE.Vector3()
+        if (raycaster.ray.intersectPlane(plane, hp)) {
+          let t = hp.clone().sub(lineOrigin.current).dot(lineDir.current)
+          t = Math.min(800, Math.max(4, t))
+          const p = lineOrigin.current.clone().addScaledVector(lineDir.current, t)
+          const aim = dirToAim(p.x, GROUND_Y, p.z)
+          setSeamAim(
+            wall.id,
+            dragKind.current === 'corner0' ? 0 : 1,
+            { yaw: Math.round(aim.yaw * 100) / 100, pitch: Math.round(aim.pitch * 100) / 100 },
+          )
         }
-      } else if (kind === 'height') {
-        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center)
-        if (ray.intersectPlane(plane, hit)) {
-          const heightM = Math.min(6, Math.max(0.3, (hit.y - GROUND_Y) / UNITS_PER_METER))
+      } else {
+        // height: intersect the pointer ray with the wall's vertical plane
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+          new THREE.Vector3(-lineDir.current.z, 0, lineDir.current.x).normalize(),
+          lineOrigin.current,
+        )
+        const hp = new THREE.Vector3()
+        if (raycaster.ray.intersectPlane(plane, hp)) {
+          const heightM = Math.min(6, Math.max(0.3, (hp.y - GROUND_Y) / UNITS_PER_METER))
           setWallHeight(wall.id, Math.round(heightM * 100) / 100)
-        }
-      } else if (kind === 'move') {
-        if (ray.intersectPlane(floorPlane, hit)) {
-          const delta = hit.clone().sub(moveGrab.current)
-          const a0 = clampFloor(
-            new THREE.Vector3(moveStart.current.b0.x + delta.x, GROUND_Y, moveStart.current.b0.z + delta.z),
-          )
-          const a1 = clampFloor(
-            new THREE.Vector3(moveStart.current.b1.x + delta.x, GROUND_Y, moveStart.current.b1.z + delta.z),
-          )
-          setWallSeam(wall.id, [dirToAim(a0.x, GROUND_Y, a0.z), dirToAim(a1.x, GROUND_Y, a1.z)])
         }
       }
     }
@@ -209,21 +173,13 @@ export function WallEditHandles({
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [wall, ndc, camera, gl, handles, floorPlane, normal, center, setSeamAim, setWallSeam, setWallHeight, setControls])
+  }, [wall, ndc, camera, gl, b0, b1, t0, t1, outline, setSeamAim, setWallHeight, setControls])
 
-  function clampFloor(p: THREE.Vector3) {
-    const horiz = Math.hypot(p.x, p.z)
-    const clamped = Math.min(20, Math.max(0.4, horiz))
-    return p.multiplyScalar(clamped / (horiz || 1))
-  }
-
-  // the five dots (visual only — pointer logic lives in the window listeners)
-  const dots: { pos: THREE.Vector3; color: string }[] = [
+  const dots = [
     { pos: b0, color: '#ffffff' },
     { pos: b1, color: '#ffffff' },
     { pos: t0, color: '#ffd166' },
     { pos: t1, color: '#ffd166' },
-    { pos: center.clone().addScaledVector(normal, 12), color: '#8fd0ff' },
   ]
 
   return (
@@ -232,13 +188,13 @@ export function WallEditHandles({
         <lineBasicMaterial color="#ffffff" transparent opacity={0.55} depthTest={false} depthWrite={false} />
       </lineLoop>
       {dots.map((d, i) => (
-        <HandleDot key={i} position={d.pos} color={d.color} hovered={hoverIdx === i} />
+        <HandleDot key={i} position={d.pos} color={d.color} />
       ))}
     </group>
   )
 }
 
-function HandleDot({ position, color, hovered }: { position: THREE.Vector3; color: string; hovered: boolean }) {
+function HandleDot({ position, color }: { position: THREE.Vector3; color: string }) {
   const ref = useRef<THREE.Group>(null)
   const { camera } = useThree()
   useFrame(() => {
@@ -250,12 +206,12 @@ function HandleDot({ position, color, hovered }: { position: THREE.Vector3; colo
   return (
     <group ref={ref} position={position}>
       <mesh renderOrder={8}>
-        <ringGeometry args={[hovered ? 0.7 : 0.72, hovered ? 0.95 : 1, 28]} />
+        <ringGeometry args={[0.72, 1, 28]} />
         <meshBasicMaterial color="#101418" transparent opacity={0.85} depthTest={false} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
       <mesh renderOrder={8}>
-        <circleGeometry args={[hovered ? 0.78 : 0.72, 28]} />
-        <meshBasicMaterial color={color} transparent opacity={hovered ? 1 : 0.92} depthTest={false} depthWrite={false} side={THREE.DoubleSide} />
+        <circleGeometry args={[0.72, 28]} />
+        <meshBasicMaterial color={color} transparent opacity={0.92} depthTest={false} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
     </group>
   )
