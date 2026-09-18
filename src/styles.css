@@ -198,3 +198,21 @@ body {
 .export-inner .actions { margin-left: auto; display: flex; gap: 8px; }
 .status { font-size: 12px; font-family: var(--font-mono); }
 .topbar { display: flex; align-items: center; gap: 12px; padding: 0 16px; }
+
+.probe-hud {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim, #9aa3b2);
+  background: rgba(10, 12, 16, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 6px 10px;
+  pointer-events: none;
+}
+.probe-hud:empty {
+  display: none;
+}
