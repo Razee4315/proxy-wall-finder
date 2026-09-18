@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
-import { GROUND_Y, UNITS_PER_METER, aimToDir, dirToAim } from '../lib/coords'
+import { EYE_HEIGHT_M, GROUND_Y, UNITS_PER_METER, aimToDir, dirToAim } from '../lib/coords'
 import type { Wall } from '../lib/types'
 import { useStore } from '../store'
 
@@ -96,6 +96,7 @@ export function WallEditHandles({
   const setWallSeam = useStore((s) => s.setWallSeam)
   const setWallHeight = useStore((s) => s.setWallHeight)
   const drag = useRef<Drag>(null)
+  const grabDist = useRef({ min: 0.5, max: 15 })
   const moveGrab = useRef(new THREE.Vector3())
   const moveStart = useRef({ b0: new THREE.Vector3(), b1: new THREE.Vector3() })
   const raycaster = useMemo(() => new THREE.Raycaster(), [])
@@ -129,7 +130,12 @@ export function WallEditHandles({
       const ray = raycaster.ray
       if (d.kind === 'corner') {
         if (ray.intersectPlane(floorPlane, hit)) {
-          setSeamAim(wall.id, d.end, dirToAim(hit.x, GROUND_Y, hit.z))
+          // bound the corner to [40% .. 250%] of its distance when grabbed:
+          // near the horizon the raw floor projection explodes to infinity
+          const horiz = Math.hypot(hit.x, hit.z)
+          const clamped = Math.min(grabDist.current.max, Math.max(grabDist.current.min, horiz))
+          const k = clamped / (horiz || 1)
+          setSeamAim(wall.id, d.end, dirToAim(hit.x * k, GROUND_Y, hit.z * k))
         }
       } else if (d.kind === 'height') {
         const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center)
@@ -146,10 +152,9 @@ export function WallEditHandles({
         }
       }
     }
-    const up = (e: PointerEvent) => {
-      // only our own pointer's up ends the drag — stray cancels from
-      // OrbitControls (fired when controls get disabled mid-drag) must not
-      if (drag.current && e.pointerId === drag.current.pointerId) {
+    const up = () => {
+      // ANY pointerup ends the drag — simpler and impossible to get stuck
+      if (drag.current) {
         drag.current = null
         setControls(true)
       }
@@ -166,6 +171,13 @@ export function WallEditHandles({
     (d: { kind: 'corner'; end: 0 | 1 } | { kind: 'height' } | { kind: 'move' }) =>
     (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation()
+      if (d.kind === 'corner') {
+        // corner drag range is relative to where the corner sits now —
+        // the seam's pitch encodes its floor distance: d = h / tan(|pitch|)
+        const seamAim = d.end === 0 ? wall.seam[0] : wall.seam[1]
+        const dist = Math.abs(EYE_HEIGHT_M / Math.tan((Math.abs(seamAim.pitch) * Math.PI) / 180))
+        grabDist.current = { min: Math.max(0.5, dist * 0.4), max: dist * 2.5 }
+      }
       if (d.kind === 'move') {
         // remember where on the floor the grab began
         raycaster.setFromCamera(ndc.current, camera)
