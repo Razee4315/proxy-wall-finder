@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { GROUND_Y, UNITS_PER_METER, aimToDir } from '../lib/coords'
 import type { Scene, Wall } from '../lib/types'
+import { WallEditHandles } from './WallEditHandles'
 
 const COLORS: Record<string, string> = {
   auto: '#4ade80',
@@ -41,55 +42,22 @@ function compileQuad(wall: Wall) {
 /** The tour's ground cursor, ported for verification: raycast {wall quads,
  *  floor plane}, nearest wins; the ring lies flat on the floor and stands
  *  up on walls, tinted by the wall's state. Purely visual. */
-function CursorRing({ quads, onProbe }: { quads: ReturnType<typeof compileQuad>[]; onProbe: (p: Probe) => void }) {
+function CursorRing({
+  quads,
+  ndc,
+  onProbe,
+}: {
+  quads: ReturnType<typeof compileQuad>[]
+  ndc: React.MutableRefObject<THREE.Vector2>
+  onProbe: (p: Probe) => void
+}) {
   const { camera, gl } = useThree()
   const group = useRef<THREE.Group>(null)
   const ringMat = useRef<THREE.MeshBasicMaterial>(null)
   const ray = useMemo(() => new THREE.Raycaster(), [])
   const up = useMemo(() => new THREE.Vector3(0, 1, 0), [])
   const wallQuat = useRef(new THREE.Quaternion())
-  const hovering = useRef(false)
   const lastProbeKey = useRef("")
-  /** own NDC tracking — window-level so embedded/automation pointer events
-   *  are caught no matter which element they land on */
-  const ndc = useRef(new THREE.Vector2(10, 10))
-
-  useEffect(() => {
-    const el = gl.domElement
-    const track = (e: PointerEvent | MouseEvent) => {
-      const r = el.getBoundingClientRect()
-      ndc.current.set(
-        ((e.clientX - r.left) / r.width) * 2 - 1,
-        -((e.clientY - r.top) / r.height) * 2 + 1,
-      )
-      hovering.current =
-        e.clientX >= r.left && e.clientX <= r.right &&
-        e.clientY >= r.top && e.clientY <= r.bottom
-    }
-    const leave = () => { hovering.current = false }
-    window.addEventListener('pointermove', track)
-    window.addEventListener('pointerleave', leave)
-    el.addEventListener('pointerleave', leave)
-    return () => {
-      window.removeEventListener('pointermove', track)
-      window.removeEventListener('pointerleave', leave)
-      el.removeEventListener('pointerleave', leave)
-    }
-  }, [gl])
-
-  useEffect(() => {
-    const el = gl.domElement
-    const enter = () => { hovering.current = true }
-    const leave = () => { hovering.current = false }
-    el.addEventListener('pointerenter', enter)
-    el.addEventListener('pointermove', enter)
-    el.addEventListener('pointerleave', leave)
-    return () => {
-      el.removeEventListener('pointerenter', enter)
-      el.removeEventListener('pointermove', enter)
-      el.removeEventListener('pointerleave', leave)
-    }
-  }, [gl])
 
   useFrame(() => {
     if (!group.current || !ringMat.current) return
@@ -99,7 +67,8 @@ function CursorRing({ quads, onProbe }: { quads: ReturnType<typeof compileQuad>[
     let color = FLOOR_RING_COLOR
     let opacity = 0
 
-    if (hovering.current) {
+    const inside = ndc.current.x >= -1 && ndc.current.x <= 1 && ndc.current.y >= -1 && ndc.current.y <= 1
+    if (inside) {
       ray.setFromCamera(ndc.current, camera)
       const o = ray.ray.origin
       const dir = ray.ray.direction
@@ -162,13 +131,20 @@ function CursorRing({ quads, onProbe }: { quads: ReturnType<typeof compileQuad>[
       lastProbeKey.current = key
       onProbe(probe)
     }
+
+    // test/debug hook: live raycast state + world→screen projection
+    const size = new THREE.Vector2()
+    gl.getSize(size)
+    const v = new THREE.Vector3()
     ;(window as any).__ring = {
-      hovering: hovering.current,
+      hovering: true,
       quads: quads.length,
-      px: ndc.current.x.toFixed(2),
-      py: ndc.current.y.toFixed(2),
       surface: probe.surface,
       distM: probe.distM.toFixed(1),
+      project: (x: number, y: number, z: number) => {
+        v.set(x, y, z).project(camera)
+        return [((v.x + 1) / 2) * size.x, ((1 - v.y) / 2) * size.y, v.z]
+      },
     }
   })
 
@@ -231,7 +207,29 @@ export function Viewer({
   onSelectWall: (id: string | null) => void
 }) {
   const [probe, setProbe] = useState<Probe>({ surface: 'none', wallId: '', wallState: '', distM: 0 })
+  const ndc = useRef(new THREE.Vector2(10, 10))
+  const [controlsEnabled, setControlsEnabled] = useState(true)
   const quads = useMemo(() => (scene ? scene.walls.map(compileQuad) : []), [scene])
+
+  // window-level pointer tracking — NDC mapped through the canvas rect, so
+  // the ring and the drag handles follow the mouse no matter which element
+  // the browser lands events on
+  useEffect(() => {
+    const canvas = document.querySelector('.viewer canvas')
+    const track = (e: PointerEvent) => {
+      if (!canvas) return
+      const r = canvas.getBoundingClientRect()
+      ndc.current.set(
+        ((e.clientX - r.left) / r.width) * 2 - 1,
+        -((e.clientY - r.top) / r.height) * 2 + 1,
+      )
+    }
+    window.addEventListener('pointermove', track)
+    return () => window.removeEventListener('pointermove', track)
+  }, [])
+
+  const selectedWall = scene?.walls.find((w) => w.id === selectedWallId) ?? null
+
   if (!scene?.imageUrl) {
     return <div className="placeholder">Drop equirect panoramas here, then .npz depth</div>
   }
@@ -248,8 +246,11 @@ export function Viewer({
             onSelect={() => onSelectWall(wall.id)}
           />
         ))}
-        <CursorRing quads={quads} onProbe={setProbe} />
-        <OrbitControls enablePan={false} target={[0, 0, 0]} rotateSpeed={-0.35} />
+        {selectedWall && (
+          <WallEditHandles wall={selectedWall} ndc={ndc} setControls={setControlsEnabled} />
+        )}
+        <CursorRing quads={quads} ndc={ndc} onProbe={setProbe} />
+        <OrbitControls enabled={controlsEnabled} enablePan={false} target={[0, 0, 0]} rotateSpeed={-0.35} />
       </Canvas>
       <div className="probe-hud" data-surface={probe.surface}>
         {probe.surface === 'floor' && (

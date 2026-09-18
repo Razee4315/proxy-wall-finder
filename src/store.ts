@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { wrapYaw } from './lib/coords'
+import { round2, wrapYaw } from './lib/coords'
+import type { Aim } from './lib/coords'
 import { extractWallsFromDepth } from './lib/extractWalls'
 import { parseDepthNpz } from './lib/npz'
 import type { DepthMeta, Scene, Wall, WallState } from './lib/types'
@@ -19,6 +20,8 @@ type Store = {
   selectWall: (id: string | null) => void
   setWallState: (id: string, state: WallState) => void
   nudgeSeam: (id: string, end: 0 | 1, dYaw: number) => void
+  setSeamAim: (id: string, end: 0 | 1, aim: Aim) => void
+  setWallSeam: (id: string, seam: [Aim, Aim]) => void
   setWallHeight: (id: string, heightM: number) => void
   removeScene: (id: string) => void
 }
@@ -177,6 +180,31 @@ export const useStore = create<Store>((set, get) => ({
 
   setWallState: (id, state) => {
     set((st) => ({ scenes: patchWall(st.scenes, st.activeSceneId, id, (w) => ({ ...w, state })) }))
+    get().persist()
+  },
+
+  setSeamAim: (id, end, aim) => {
+    set((st) => ({
+      scenes: patchWall(st.scenes, st.activeSceneId, id, (w) => {
+        const seam: Wall['seam'] = [{ ...w.seam[0] }, { ...w.seam[1] }]
+        seam[end] = { yaw: round2(aim.yaw), pitch: round2(aim.pitch) }
+        return { ...w, seam, state: 'edited' }
+      }),
+    }))
+    get().persist()
+  },
+
+  setWallSeam: (id, seam) => {
+    set((st) => ({
+      scenes: patchWall(st.scenes, st.activeSceneId, id, (w) => ({
+        ...w,
+        seam: [
+          { yaw: round2(seam[0].yaw), pitch: round2(seam[0].pitch) },
+          { yaw: round2(seam[1].yaw), pitch: round2(seam[1].pitch) },
+        ],
+        state: 'edited',
+      })),
+    }))
     get().persist()
   },
 
