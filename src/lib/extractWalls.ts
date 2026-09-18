@@ -37,7 +37,7 @@ export function extractWallsFromDepth(
   }
   if (floorYs.length <= 20) {
     // no dominant floor (domed / open-air): flag everything, raw distances
-    return { walls: extractRuns(new Float64Array(BINS).fill(Number.NaN), 1, true, true), scaleCorrection: 1 }
+    return { walls: extractRuns(new Float64Array(BINS).fill(Number.NaN), true, true), scaleCorrection: 1 }
   }
   floorYs.sort((a, b) => a - b)
   let floorY = floorYs[Math.floor(floorYs.length / 2)]
@@ -80,13 +80,12 @@ export function extractWallsFromDepth(
     profile[b] = arr[Math.floor(arr.length / 2)]
   }
 
-  const walls = extractRuns(profile, scaleCorrection, false, scaleUnreliable)
+  const walls = extractRuns(profile, false, scaleUnreliable)
   return { walls, scaleCorrection: round2(scaleCorrection) }
 }
 
 function extractRuns(
   profile: Float64Array,
-  scaleCorrection: number,
   noFloor: boolean,
   scaleUnreliable: boolean,
 ): Wall[] {
