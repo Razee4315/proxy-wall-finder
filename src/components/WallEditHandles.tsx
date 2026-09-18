@@ -97,6 +97,7 @@ export function WallEditHandles({
   const setWallHeight = useStore((s) => s.setWallHeight)
   const drag = useRef<Drag>(null)
   const grabDist = useRef({ min: 0.5, max: 15 })
+  const grabOffset = useRef(new THREE.Vector3())
   const moveGrab = useRef(new THREE.Vector3())
   const moveStart = useRef({ b0: new THREE.Vector3(), b1: new THREE.Vector3() })
   const raycaster = useMemo(() => new THREE.Raycaster(), [])
@@ -130,12 +131,12 @@ export function WallEditHandles({
       const ray = raycaster.ray
       if (d.kind === 'corner') {
         if (ray.intersectPlane(floorPlane, hit)) {
-          // bound the corner to [40% .. 250%] of its distance when grabbed:
-          // near the horizon the raw floor projection explodes to infinity
-          const horiz = Math.hypot(hit.x, hit.z)
+          // pointer projection + grab offset = the corner follows 1:1
+          const target = hit.clone().add(grabOffset.current)
+          const horiz = Math.hypot(target.x, target.z)
           const clamped = Math.min(grabDist.current.max, Math.max(grabDist.current.min, horiz))
           const k = clamped / (horiz || 1)
-          setSeamAim(wall.id, d.end, dirToAim(hit.x * k, GROUND_Y, hit.z * k))
+          setSeamAim(wall.id, d.end, dirToAim(target.x * k, GROUND_Y, target.z * k))
         }
       } else if (d.kind === 'height') {
         const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center)
@@ -177,6 +178,14 @@ export function WallEditHandles({
         const seamAim = d.end === 0 ? wall.seam[0] : wall.seam[1]
         const dist = Math.abs(EYE_HEIGHT_M / Math.tan((Math.abs(seamAim.pitch) * Math.PI) / 180))
         grabDist.current = { min: Math.max(0.5, dist * 0.4), max: dist * 2.5 }
+        // grab offset: the corner stays glued to the mouse point (no teleport)
+        raycaster.setFromCamera(ndc.current, camera)
+        const cornerPt = d.end === 0 ? b0 : b1
+        if (raycaster.ray.intersectPlane(floorPlane, hit)) {
+          grabOffset.current.copy(cornerPt).sub(hit)
+        } else {
+          grabOffset.current.set(0, 0, 0)
+        }
       }
       if (d.kind === 'move') {
         // remember where on the floor the grab began
