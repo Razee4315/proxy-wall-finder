@@ -2,7 +2,8 @@
 """
 generate-depth.py — Proxy Wall Finder depth sidecar (M1, docs/ROADMAP.md).
 
-Runs DAP ("Depth Any Panoramas", Insta360-Research-Team) over a folder of
+Runs DAP ("Depth Any Panoramas", Insta360-Research-Team).
+DAP weights are CC BY-NC 4.0 (non-commercial) — see docs/MODEL-DAP.md. over a folder of
 equirectangular panoramas and writes the app-facing contract of
 docs/TECHNICAL-DESIGN.md §3:
 
