@@ -244,3 +244,8 @@ export const useStore = create<Store>((set, get) => ({
     get().persist()
   },
 }))
+
+// dev/test hook: live store access from the browser console / automation
+if (typeof window !== 'undefined') {
+  ;(window as any).__pwpStore = useStore
+}

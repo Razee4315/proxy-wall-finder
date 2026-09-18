@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { useThree, type ThreeEvent } from '@react-three/fiber'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { GROUND_Y, UNITS_PER_METER, aimToDir, dirToAim } from '../lib/coords'
 import type { Wall } from '../lib/types'
@@ -21,15 +21,66 @@ export function wallCorners(wall: Wall) {
   return { b0, b1, t0: b0.clone().setY(GROUND_Y + h), t1: b1.clone().setY(GROUND_Y + h), h }
 }
 
-const HANDLE_R = 7 // ≈ 17 cm at tour scale — chunky enough to grab
+const HANDLE_R = 0.72
+
+/**
+ * Screen-constant sized, camera-facing handle: the dot renders the same
+ * pixel size at any distance (like Blender/SketchUp gizmos), with a slim
+ * dark rim for contrast and an invisible larger hit zone for comfort.
+ */
+function Handle({
+  position,
+  color,
+  onDown,
+}: {
+  position: THREE.Vector3
+  color: string
+  onDown: (e: ThreeEvent<PointerEvent>) => void
+}) {
+  const ref = useRef<THREE.Group>(null)
+  const { camera } = useThree()
+  const [hovered, setHovered] = useState(false)
+
+  useFrame(() => {
+    if (!ref.current) return
+    const d = ref.current.position.distanceTo(camera.position)
+    // constant screen size: world radius grows linearly with distance
+    ref.current.scale.setScalar(Math.max(1.5, d * 0.03))
+    ref.current.quaternion.copy(camera.quaternion) // billboard
+  })
+
+  return (
+    <group ref={ref} position={position}>
+      {/* generous invisible hit zone (~2.5× the visual dot) */}
+      <mesh
+        onPointerDown={onDown}
+        onPointerOver={() => setHovered(true)}
+        onPointerOut={() => setHovered(false)}
+        renderOrder={7}
+      >
+        <circleGeometry args={[2.2, 24]} />
+        <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      {/* slim dark rim + dot */}
+      <mesh renderOrder={8}>
+        <ringGeometry args={[hovered ? 0.7 : HANDLE_R, hovered ? 0.95 : 1, 28]} />
+        <meshBasicMaterial color="#101418" transparent opacity={0.85} depthTest={false} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh renderOrder={8}>
+        <circleGeometry args={[hovered ? 0.78 : HANDLE_R, 28]} />
+        <meshBasicMaterial color={color} transparent opacity={hovered ? 1 : 0.92} depthTest={false} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  )
+}
 
 /**
  * Direct manipulation for the selected wall:
- *  - white corner spheres on the floor seam: drag → the corner slides along
- *    the virtual floor (aim re-derived from the new floor point) — stretch
- *  - amber handles on the top edge: drag up/down → wall height
- *  - blue handle at the center: drag → the whole wall slides on the floor
- * OrbitControls must be disabled while a drag is live (setControls).
+ *  - white dots on the floor seam: drag → the corner slides along the
+ *    virtual floor (aim re-derived every frame) — stretch
+ *  - amber dots on the top edge: drag up/down → wall height
+ *  - blue dot at the center: drag → the whole wall slides on the floor
+ * OrbitControls is disabled while a drag is live (setControls).
  */
 export function WallEditHandles({
   wall,
@@ -65,7 +116,6 @@ export function WallEditHandles({
     return n.dot(center) > 0 ? n.negate() : n
   }, [b0, b1, center])
 
-  // outline of the quad, updated with the wall
   const outline = useMemo(() => {
     const g = new THREE.BufferGeometry().setFromPoints([b0, b1, t1, t0])
     return g
@@ -115,52 +165,35 @@ export function WallEditHandles({
   const start =
     (d: { kind: 'corner'; end: 0 | 1 } | { kind: 'height' } | { kind: 'move' }) =>
     (e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation()
-    if (d.kind === 'move') {
-      // remember where on the floor the grab began
-      raycaster.setFromCamera(ndc.current, camera)
-      if (raycaster.ray.intersectPlane(floorPlane, hit)) {
-        moveGrab.current.copy(hit)
-        moveStart.current = { b0: b0.clone(), b1: b1.clone() }
-        drag.current = { kind: 'move', pointerId: e.pointerId }
+      e.stopPropagation()
+      if (d.kind === 'move') {
+        // remember where on the floor the grab began
+        raycaster.setFromCamera(ndc.current, camera)
+        if (raycaster.ray.intersectPlane(floorPlane, hit)) {
+          moveGrab.current.copy(hit)
+          moveStart.current = { b0: b0.clone(), b1: b1.clone() }
+          drag.current = { kind: 'move', pointerId: e.pointerId }
+        }
+      } else {
+        drag.current = { ...d, pointerId: e.pointerId } as Drag
       }
-    } else {
-      drag.current = { ...d, pointerId: e.pointerId } as Drag
+      setControls(false)
     }
-    setControls(false)
-  }
-
-  const hover = (on: boolean) => () => {
-    document.body.style.cursor = on ? 'grab' : ''
-    // while the pointer is on a handle the camera must not orbit — grabbing
-    // a corner and rotating the view at the same time is unusable
-    setControls(on)
-  }
-
-  const sphere = (pos: THREE.Vector3, color: string, onDown: (e: ThreeEvent<PointerEvent>) => void, key: string) => (
-    <mesh
-      key={key}
-      position={pos}
-      onPointerDown={onDown}
-      onPointerOver={hover(true)}
-      onPointerOut={hover(false)}
-      renderOrder={6}
-    >
-      <sphereGeometry args={[HANDLE_R, 16, 12]} />
-      <meshBasicMaterial color={color} transparent opacity={0.9} depthTest={false} depthWrite={false} />
-    </mesh>
-  )
 
   return (
     <group>
       <lineLoop geometry={outline} renderOrder={6}>
-        <lineBasicMaterial color="#ffffff" transparent opacity={0.85} depthTest={false} depthWrite={false} />
+        <lineBasicMaterial color="#ffffff" transparent opacity={0.55} depthTest={false} depthWrite={false} />
       </lineLoop>
-      {sphere(b0, '#ffffff', start({ kind: 'corner', end: 0 }), 'c0')}
-      {sphere(b1, '#ffffff', start({ kind: 'corner', end: 1 }), 'c1')}
-      {sphere(t0, '#ffd166', start({ kind: 'height' }), 'h0')}
-      {sphere(t1, '#ffd166', start({ kind: 'height' }), 'h1')}
-      {sphere(center.clone().addScaledVector(normal, 14), '#8fd0ff', start({ kind: 'move' }), 'm')}
+      <Handle position={b0} color="#ffffff" onDown={start({ kind: 'corner', end: 0 })} />
+      <Handle position={b1} color="#ffffff" onDown={start({ kind: 'corner', end: 1 })} />
+      <Handle position={t0} color="#ffd166" onDown={start({ kind: 'height' })} />
+      <Handle position={t1} color="#ffd166" onDown={start({ kind: 'height' })} />
+      <Handle
+        position={center.clone().addScaledVector(normal, 12)}
+        color="#8fd0ff"
+        onDown={start({ kind: 'move' })}
+      />
     </group>
   )
 }

@@ -142,6 +142,7 @@ function CursorRing({
       surface: probe.surface,
       distM: probe.distM.toFixed(1),
       project: (x: number, y: number, z: number) => {
+        camera.updateMatrixWorld()
         v.set(x, y, z).project(camera)
         return [((v.x + 1) / 2) * size.x, ((1 - v.y) / 2) * size.y, v.z]
       },
@@ -228,6 +229,15 @@ export function Viewer({
     return () => window.removeEventListener('pointermove', track)
   }, [])
 
+  // deselect: click on empty space (handled by onPointerMissed) or Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onSelectWall(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onSelectWall])
+
   const selectedWall = scene?.walls.find((w) => w.id === selectedWallId) ?? null
 
   if (!scene?.imageUrl) {
@@ -235,7 +245,12 @@ export function Viewer({
   }
   return (
     <>
-      <Canvas camera={{ fov: 70, position: [0, 0, 0.01], near: 0.1, far: 2000 }}>
+      <Canvas
+        dpr={1}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
+        camera={{ fov: 70, position: [0, 0, 0.01], near: 0.1, far: 2000 }}
+        onPointerMissed={() => onSelectWall(null)}
+      >
         <Pano url={scene.imageUrl} />
         <gridHelper args={[400, 40, '#3a5', '#1a3']} position={[0, GROUND_Y + 0.05, 0]} />
         {scene.walls.map((wall) => (
@@ -250,7 +265,15 @@ export function Viewer({
           <WallEditHandles wall={selectedWall} ndc={ndc} setControls={setControlsEnabled} />
         )}
         <CursorRing quads={quads} ndc={ndc} onProbe={setProbe} />
-        <OrbitControls enabled={controlsEnabled} enablePan={false} target={[0, 0, 0]} rotateSpeed={-0.35} />
+        <OrbitControls
+          enabled={controlsEnabled}
+          enablePan={false}
+          target={[0, 0, 0]}
+          rotateSpeed={-0.35}
+          enableDamping
+          dampingFactor={0.08}
+          zoomSpeed={0.6}
+        />
       </Canvas>
       <div className="probe-hud" data-surface={probe.surface}>
         {probe.surface === 'floor' && (
