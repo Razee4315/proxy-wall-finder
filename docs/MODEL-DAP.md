@@ -34,44 +34,68 @@ pip install -r requirements.txt
 # download weights from the HuggingFace repo (Insta360-Research/DAP-weights)
 ```
 
-Tested upstream on torch 2.7.1 / torchvision 0.22.1. A CUDA GPU is implied by
-the upstream setup; CPU inference speed is unverified upstream — assume GPU
-or cloud for now (§6).
+Tested upstream on torch 2.7.1 / torchvision 0.22.1; the README says any
+torch > 2 works. Do **not** `pip install -r requirements.txt` on Colab —
+it would reinstall torch (risking the preinstalled CUDA build) and drag in
+unneeded extras (gradio, open3d, mmengine). On Colab only `einops` is
+missing; a local box needs torch + opencv-python + matplotlib + pyyaml +
+einops + numpy. The sidecar itself avoids torchvision (plain compose).
 
 ## 3. Inference (our wrapper)
 
 Upstream runs `python test/infer.py` (single/edited inputs). Our sidecar
-`scripts/generate-depth.py` wraps it to process a **folder**:
+`scripts/generate-depth.py` wraps it to process a **folder** — locally on a
+GPU box, or on Colab via [`colab/generate-depth.ipynb`](../colab/generate-depth.ipynb)
+(T4 GPU; our laptop GPU is 4 GB and too small — §4):
 
 ```
 python scripts/generate-depth.py \
-  --dap-root  C:/ml/DAP \            # cloned repo + weights
+  --dap-root  C:/ml/DAP \            # cloned repo + weights/model.pth
   --panos     C:/site/panoramas \    # equirect JPG/PNG/WEBP
   --out       C:/site/depth \        # <scene>.npz + <scene>.json per pano
-  --device    cuda                   # or cpu
+  --device    auto                   # auto | cuda | cpu
 ```
 
 Output contract (consumed by the web app — see
 [TECHNICAL-DESIGN §3](TECHNICAL-DESIGN.md)):
 
-- `<scene>.npz` — float16 `depth[H, W]` in **metres**, aligned to the
-  equirect grid (whatever internal resolution DAP uses; the JSON records it).
-- `<scene>.json` — provenance: `{ model: "DAP", model_commit, weights_file,
-  resolution, device, seconds, date, metric: true }`.
+- `<scene>.npz` — `depth` float16 `[H, W]` in **metres** at the model's
+  output resolution (the JSON records it), plus `valid` uint8 (1 = valid
+  depth, 0 = model-flagged invalid — glass/mirrors/sky candidates).
+- `<scene>.json` — provenance: model + commit + weights, resolution, device,
+  seconds, date, `metric: true`, scale note, direction convention.
 
-Implementation note: reuse DAP's own loader/preprocess and `depth2point.py`'s
-direction convention inside the wrapper — the app's point-cloud code (§4.1 of
-TECHNICAL-DESIGN) must match it exactly. **First task of M1 is diffing our
-equirect direction formula against `depth2point.py` and writing a one-image
-regression check.**
+### Verified against the upstream repo (2026-09, M1 recon + mock run)
+
+1. **Output scale — normalized, not metres.** The model emits `pred_depth`
+   in `0..1` where `1.0 == 100 m` (`config/infer.yaml` `max_depth: 1.0`;
+   every dataset trains on `gt_depth / 100`). **metres = pred × 100** — the
+   sidecar does this before writing the npz. This is the "relative depth in
+   disguise" case §6.3 warned about, caught by reading the code; the
+   laser-measure check (§6.3) still validates it end-to-end.
+2. **`pred_mask`** — the model also emits an invalid mask; upstream treats
+   `(1 − pred_mask) > 0.5` as valid and rewrites invalid pixels to `1.0`
+   (= 100 m). We keep that convention and store the mask (`valid` in the
+   npz) — free input for the glass-suspect heuristic (TECHNICAL-DESIGN §4.5).
+3. **Weights** — single `model.pth`, 1.46 GB, **CC BY-NC 4.0** (non-commercial;
+   see §6.1), public HF repo, no gating.
+4. **Preprocessing** — upstream's `image2tensor`: lower-bound resize
+   (short side 518, multiples of DINOv3's patch 14 → ~1036×518 for 2:1
+   panos), ImageNet mean/std. The sidecar replicates it exactly but binds
+   the device itself (so `--device cpu` works on CUDA machines).
+5. **Direction convention** — DAP's `depth2point.py` is z-up
+   (`θ=(1−u)·2π, φ=v·π`); our pipeline formula (TECHNICAL-DESIGN §4.1) is
+   the pixel-exact equivalent re-expressed in tour coordinates (Y-up,
+   yaw 0 = −Z). Recorded in every provenance JSON; the one-image regression
+   check (asymmetric room, M2) still validates it against real output.
 
 ## 4. Hardware guidance
 
 | Machine | How to run |
 |---|---|
 | CUDA GPU (≥8 GB) | local sidecar, seconds–minutes per pano |
-| The maintainer's weak laptop | Colab / Kaggle / any GPU box: run the sidecar there, bring back the `.npz` files (a 9-scene site is a few MB of float16) |
-| CPU-only | unverified upstream — try `--device cpu` once; if unusable, fall back to §5 models with known CPU paths, or batch overnight |
+| The maintainer's weak laptop (4 GB Quadro) | **[`colab/generate-depth.ipynb`](../colab/generate-depth.ipynb)** (free T4): setup → weights → upload panos → generate → download zip, then unzip into `depth/` for the app. A 9-scene site is a few MB of float16. |
+| CPU-only | try `--device cpu` once (a local 3.12 venv exists at `C:\ml\pwp-sidecar` with CPU torch); if unusable, batch overnight or fall back to §5 models |
 
 The web app is deliberately inference-free, so the sidecar can move to any
 machine without touching the tool.

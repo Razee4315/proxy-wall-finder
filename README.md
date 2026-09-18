@@ -41,9 +41,9 @@ time target: under 3 minutes per scene, mostly looking.
 1. **Drop panoramas** (JPG/PNG/WEBP equirect) — scenes keyed by filename,
    `neic-venture-corridor.jpg` → scene id `neic-venture-corridor`, exactly
    like Pitch & Yaw Finder.
-2. **Generate depth** — one sidecar command runs DAP over the folder
-   (locally on a GPU machine, or in Colab/CI); the app loads the `.npz`
-   depth files.
+2. **Generate depth** — run **[`colab/generate-depth.ipynb`](colab/generate-depth.ipynb)**
+   on free Colab (or `scripts/generate-depth.py` on any GPU/CPU box); the app
+   loads the resulting `.npz` depth files.
 3. **Review** — walls render as translucent quads over the live 360 view:
    green = auto-accepted, amber = needs a look, red = rejected/glass-suspect.
    The wall list shows per-wall confidence, width, distance.

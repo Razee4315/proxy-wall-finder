@@ -6,3 +6,4 @@ dist
 *.npz
 panos/
 depth/
+__pycache__/
