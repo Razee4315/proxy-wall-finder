@@ -4,7 +4,7 @@
 > Effort estimates assume one developer; the weak local machine is why depth
 > steps are sidecar/remote-friendly from day one.
 
-## M0 — Scaffold (half day) ✅ structure exists
+## M0 — Scaffold (half day) ✅ app boots with sphere viewer + drop intake
 - Vite + React 19 + r3f + zustand + TS scaffold; tokens.css copied from
   NEIC-Tour; dark shell (top bar / viewer / sidebar / export bar layout).
 - Acceptance: app boots, panos render in the tour-convention sphere (port
@@ -21,24 +21,24 @@
   into the same contract.
 - Acceptance: 9 NEIC panos → 9 `.npz` + provenance JSONs.
 
-## M2 — Depth → walls pipeline (2 days)
+## M2 — Depth → walls pipeline (2 days) ✅ TS pipeline + synthetic tests (golden corridor still open)
 - Point cloud, floor RANSAC, scale calibration, polar profile, segmentation,
   confidence + glass heuristic (TECHNICAL-DESIGN §4).
 - Unit tests with synthetic box-room depth; golden test vs. the corridor's
   hand-calibrated 4 walls.
 - Acceptance: corridor walls re-derived within ±20 cm / ±5°.
 
-## M3 — Review viewer (2 days)
+## M3 — Review viewer (2 days) ✅ quads + sidebar + state colors
 - Wall quads overlay (state colors, wireframe), floor grid, crosshair, wall
   list synced with hover/selection, confidence chips, derived readouts.
 - Acceptance: PRD G4 — no silent walls; every wall shows state + numbers.
 
-## M4 — Manual adjustment (1.5 days)
+## M4 — Manual adjustment (1.5 days) ✅ seam nudge + height + accept/reject
 - Selection, seam-end nudging (keys + typed), height edit, accept/reject,
   manual add via crosshair aims, delete; invalid-wall live badges.
 - Acceptance: a rejected glass wall can be hand-fixed in < 2 min.
 
-## M5 — Export + persistence (1 day)
+## M5 — Export + persistence (1 day) ✅ clipboard + JSON + localStorage
 - Copy proxy block per scene / copy all JSON / download / import
   (DATA-FORMAT); localStorage session; export-side validation badges.
 - Acceptance: exported corridor block pastes into `tour.ts` and passes the

@@ -1,77 +1,62 @@
-# Proxy Wall Finder — 360 Wall Calibrator
+# Proxy Wall Finder
 
-The companion to [Pitch & Yaw Finder](../pitch-and-yaw-finder): that tool
-calibrates **hotspots** (yaw/pitch), this one calibrates **walls** — the
-invisible proxy geometry the NEIC-Tour ground cursor rides
-(Matterport-style wall-riding reticle).
+Producer tool for **NEIC-Tour**: drop equirectangular panoramas, run panoramic depth offline, review invisible wall proxies, export paste-ready `proxy` blocks for `tour.ts`.
 
-Drop in your equirectangular panoramas, run **DAP** (Insta360's panoramic
-depth foundation model) to auto-detect the walls, review them as translucent
-quads over the live 360 view, nudge anything the model got wrong, and copy
-paste-ready `proxy: { walls: [...] }` blocks in the tour's exact format.
+Sibling to [Pitch & Yaw Finder](https://github.com/Razee4315/pitch-and-yaw-finder).
 
-**Model**: [Insta360-Research-Team/DAP](https://github.com/Insta360-Research-Team/DAP)
-(CVPR 2026, "Depth Any Panoramas") · weights:
-[huggingface.co/Insta360-Research/DAP-weights](https://huggingface.co/Insta360-Research/DAP-weights)
+## Status (honest)
 
-## The one-paragraph pitch
+| Layer | State |
+|-------|--------|
+| Docs | Complete design set in `docs/` |
+| Depth sidecar | `scripts/generate-depth.py` + Colab notebook |
+| Web app | Working vertical slice: pano sphere, depth→walls, review/nudge, export |
+| M1 verification | Checklist in `docs/MODEL-DAP.md` — still needs a real pano + laser on your GPU/Colab |
 
-A 360° photo has no geometry, so the tour's ground cursor can't climb walls
-until each scene declares invisible wall quads. Hand-calibrating them is
-5–10 minutes per scene and doesn't scale to more clients. This tool makes it:
-**drop panos → auto-generate walls from depth → review → export.** Human
-time target: under 3 minutes per scene, mostly looking.
+## DAP license (important)
 
-## Status
+This repo is **MIT**. **DAP weights are CC BY-NC 4.0** (non-commercial). Fine for demos/internal. For paid client tours: get a commercial license from Insta360, or use a commercially safer metric backend (Depth Anything 3 Apache metric + cubemap tiling; ZoeDepth as weak CPU fallback). Do **not** treat Apple Depth Pro weights as a commercial fallback.
 
-📋 **Design phase** — full documentation set in [`docs/`](docs/):
+## Quick start (app)
 
-| Doc | What's in it |
-|---|---|
-| [`docs/PROBLEM.md`](docs/PROBLEM.md) | The problem we're solving and the solution shape |
-| [`docs/PRD.md`](docs/PRD.md) | Product requirements, features, goals, non-goals |
-| [`docs/TECHNICAL-DESIGN.md`](docs/TECHNICAL-DESIGN.md) | Architecture, depth→walls pipeline, coordinate conventions |
-| [`docs/MODEL-DAP.md`](docs/MODEL-DAP.md) | DAP integration: install, weights, inference, fallbacks |
-| [`docs/DATA-FORMAT.md`](docs/DATA-FORMAT.md) | The interchange JSON + tour.ts export contracts |
-| [`docs/DESIGN-TOKENS.md`](docs/DESIGN-TOKENS.md) | VIYLSA design tokens (mirrors NEIC-Tour `tokens.css`) |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Milestones M0–M6 |
+```bash
+npm install
+npm run dev
+```
 
-## Workflow (designed, being built)
+Drop `.jpg/.png/.webp` panos, then matching `.npz` (+ optional `.json`) from the sidecar.
 
-1. **Drop panoramas** (JPG/PNG/WEBP equirect) — scenes keyed by filename,
-   `neic-venture-corridor.jpg` → scene id `neic-venture-corridor`, exactly
-   like Pitch & Yaw Finder.
-2. **Generate depth** — run **[`colab/generate-depth.ipynb`](colab/generate-depth.ipynb)**
-   on free Colab (or `scripts/generate-depth.py` on any GPU/CPU box); the app
-   loads the resulting `.npz` depth files.
-3. **Review** — walls render as translucent quads over the live 360 view:
-   green = auto-accepted, amber = needs a look, red = rejected/glass-suspect.
-   The wall list shows per-wall confidence, width, distance.
-4. **Adjust** — click a wall, nudge its seam ends with arrow keys (0.1°,
-   Shift = 1°) or type values; split a wall at a doorway; set height.
-5. **Export** — copy a scene's `proxy: { walls: [...] }` block or all-scenes
-   JSON; paste into `src/data/tour.ts`. Nothing else in the tour changes.
+```bash
+npm test
+npm run build
+```
 
-## Why a separate app (not a NEIC-Tour feature)
+## Depth sidecar
 
-Same reason Pitch & Yaw Finder exists: calibration is a producer tool, the
-tour is a consumer product. Keeping them separate keeps the tour's bundle
-lean and lets the tool move fast (break its UI freely) while the tour stays
-stable. The contract between them is one thing: the exported data format.
+Local GPU (≥8 GB) or Colab T4:
 
-## Tech
+```bash
+python scripts/generate-depth.py --dap-root /path/to/DAP --panos ./panos --out ./depth
+```
 
-React 19 · react-three-fiber 9 · three.js · zustand · Vite — deliberately
-the same stack, coordinate conventions and design tokens as NEIC-Tour and
-Pitch & Yaw Finder. Depth inference is a Python sidecar (DAP), fully
-decoupled from the web app.
+Colab: open [`colab/generate-depth.ipynb`](colab/generate-depth.ipynb) (uploads leave your machine — use local GPU for sensitive client panos).
+
+## Docs
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/PROBLEM.md](docs/PROBLEM.md) | Why this exists |
+| [docs/PRD.md](docs/PRD.md) | Requirements |
+| [docs/TECHNICAL-DESIGN.md](docs/TECHNICAL-DESIGN.md) | Pipeline & coordinates |
+| [docs/MODEL-DAP.md](docs/MODEL-DAP.md) | DAP install, license, fallbacks, M1 checks |
+| [docs/DATA-FORMAT.md](docs/DATA-FORMAT.md) | Export contract |
+| [docs/DESIGN-TOKENS.md](docs/DESIGN-TOKENS.md) | VIYLSA tokens |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones |
+
+## Wall states
+
+Unified enum: `auto | review | accepted | edited | rejected`. Export includes `auto`, `accepted`, and `edited` only.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
-## Contact
-
-- **GitHub**: [Razee4315](https://github.com/Razee4315)
-- **LinkedIn**: [saqlainrazee](https://www.linkedin.com/in/saqlainrazee)
-- **Email**: [saqlainrazee@gmail.com](mailto:saqlainrazee@gmail.com)
+MIT for this repository — see [LICENSE](LICENSE). Third-party model weights keep their own terms.

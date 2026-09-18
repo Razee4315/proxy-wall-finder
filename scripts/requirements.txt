@@ -1,0 +1,6 @@
+numpy>=1.26
+opencv-python-headless>=4.8
+matplotlib>=3.8
+pyyaml>=6
+einops>=0.7
+# Install torch/vision for your CUDA/CPU separately — see docs/MODEL-DAP.md

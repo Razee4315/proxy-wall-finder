@@ -100,7 +100,11 @@ Output contract (consumed by the web app — see
 The web app is deliberately inference-free, so the sidecar can move to any
 machine without touching the tool.
 
-## 5. Fallback models (same sidecar contract)
+## 5. Fallback models
+
+**Commercial posture:** DAP weights are **CC BY-NC 4.0**. Use DAP for internal/demo, or obtain a commercial license. For client deliverables without that license, prefer **Depth Anything 3 metric (Apache-2.0 checkpoint)** with cubemap tiling. ZoeDepth (MIT) is a weak CPU fallback. **Apple Depth Pro weights are research/non-commercial — not a commercial fallback.**
+
+## 5b. Fallback models (same sidecar contract)
 
 If DAP is unavailable (weights gated, license issue, bad outputs on our
 data), the sidecar's contract (`<scene>.npz` metric depth) stays fixed and

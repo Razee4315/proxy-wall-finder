@@ -31,7 +31,7 @@ Import accepts.
       "depth": {                       // provenance from the sidecar
         "model": "DAP",
         "modelCommit": "a1b2c3d",
-        "weights": "dap-main.safetensors",
+        "weights": "model.pth",
         "resolution": [1024, 512],
         "metric": true,
         "scaleCorrection": 0.98,       // floor-anchor fit, 1.0 = perfect
@@ -45,7 +45,7 @@ Import accepts.
             { "yaw": 89.6,  "pitch": -49.8 }
           ],
           "heightM": 2.7,
-          "state": "accepted",          // auto | accepted | edited | rejected
+          "state": "accepted",          // auto | review | accepted | edited | rejected
           "confidence": 0.86,
           "source": "depth",            // depth | manual
           "notes": ""                   // e.g. "glass-suspect"
