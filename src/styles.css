@@ -1,0 +1,154 @@
+/* =============================================================
+   Proxy Wall Finder — styles
+   Tokens are COPIED from NEIC-Tour src/styles/tokens.css
+   (VIYLSA brand system) — see docs/DESIGN-TOKENS.md. Sync by copy.
+   ============================================================= */
+:root {
+  /* ---- VIYLSA brand (NEIC-Tour tokens.css) ---- */
+  --crimson: #7f141a;
+  --crimson-deep: #5e0d14;
+  --crimson-darker: #3f080e;
+  --crimson-soft: #fae6e8;
+  --crimson-bright: #dc143c;
+  --crimson-glow: rgba(127, 20, 26, 0.35);
+
+  --ink-1000: #0a0a0b;
+  --ink-900: #141416;
+  --ink-800: #1e1e22;
+  --ink-700: #2a2a2f;
+  --ink-500: #4b4b52;
+  --ink-400: #6b6b73;
+  --ink-300: #8c8c94;
+
+  --canvas: #fafaf7;
+  --canvas-paper: #ffffff;
+  --canvas-haze: #f2f1ed;
+  --canvas-mist: #e6e5e0;
+
+  --glass: rgba(12, 12, 14, 0.58);
+  --glass-photo: rgba(12, 12, 14, 0.72);
+  --glass-strong: rgba(10, 10, 12, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-border-strong: rgba(255, 255, 255, 0.22);
+  --on-dark: #f7f6f2;
+  --on-dark-muted: rgba(247, 246, 242, 0.64);
+  --on-dark-subtle: rgba(247, 246, 242, 0.58);
+
+  --font-display: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-body: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, Menlo, monospace;
+  --font-logo: 'Playfair Display', Georgia, serif;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
+  --radius-2xl: 22px;
+  --radius-pill: 999px;
+
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 24px 64px -12px rgba(0, 0, 0, 0.55);
+  --shadow-crimson: 0 10px 32px -8px rgba(127, 20, 26, 0.6);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 150ms;
+  --dur-base: 240ms;
+  --dur-slow: 450ms;
+
+  --blur: saturate(1.4) blur(18px);
+  --blur-sm: blur(8px);
+
+  /* ---- PYF app-level surfaces ---- */
+  --bg: #0b0b0d;
+  --panel: rgba(16, 16, 19, 0.86);
+  --panel-border: rgba(255, 255, 255, 0.09);
+  --ink: #e9e7e2;
+  --ink-dim: #9b988f;
+
+  /* ---- Tool-specific semantics (docs/DESIGN-TOKENS.md §7) ---- */
+  --wall-proposed: #3aa0ff;
+  --wall-accepted: #4ade80;
+  --wall-review: #f5a623;
+  --wall-rejected: #ef4444;
+  --wall-selected: var(--crimson-bright);
+  --conf-high: #4ade80;
+  --conf-mid: #f5a623;
+  --conf-low: #ef4444;
+  --aim-cross: rgba(150, 255, 150, 0.9);
+  --floor-grid: rgba(150, 255, 150, 0.18);
+
+  /* ---- Layout ---- */
+  --topbar-h: 56px;
+  --sidebar-w: 320px;
+  --exportbar-h: 52px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+
+.app {
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr var(--exportbar-h);
+  grid-template-columns: 1fr var(--sidebar-w);
+  grid-template-areas:
+    'topbar topbar'
+    'viewer sidebar'
+    'exportbar exportbar';
+  height: 100%;
+}
+
+.topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--panel);
+  backdrop-filter: var(--blur-sm);
+}
+
+.viewer {
+  grid-area: viewer;
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar {
+  grid-area: sidebar;
+  border-left: 1px solid var(--panel-border);
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.exportbar {
+  grid-area: exportbar;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-top: 1px solid var(--panel-border);
+  background: var(--panel);
+}
+
+.placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.8;
+}

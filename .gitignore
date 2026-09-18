@@ -1,0 +1,8 @@
+node_modules
+dist
+*.local
+.DS_Store
+# local depth output and test panos never get committed
+*.npz
+panos/
+depth/
