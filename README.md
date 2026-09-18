@@ -52,6 +52,7 @@ Colab: open [`colab/generate-depth.ipynb`](colab/generate-depth.ipynb) (uploads 
 | [docs/DATA-FORMAT.md](docs/DATA-FORMAT.md) | Export contract |
 | [docs/DESIGN-TOKENS.md](docs/DESIGN-TOKENS.md) | VIYLSA tokens |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones |
+| [docs/COLAB-MCP.md](docs/COLAB-MCP.md) | Runbook: driving Colab from ZCode (colab-mcp + bridge) |
 
 ## Wall states
 
