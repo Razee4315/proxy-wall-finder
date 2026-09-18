@@ -7,3 +7,4 @@ dist
 panos/
 depth/
 __pycache__/
+public/_test/
